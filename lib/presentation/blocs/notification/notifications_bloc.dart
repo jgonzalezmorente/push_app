@@ -4,6 +4,7 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:equatable/equatable.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
+import 'package:push_app/config/local_notifications/local_notifications.dart';
 import 'package:push_app/domain/entities/push_message.dart';
 import 'package:push_app/firebase_options.dart';
 
@@ -17,8 +18,15 @@ Future<void> firebaseMessagingBackgroundHandler(RemoteMessage message) async {
 class NotificationsBloc extends Bloc<NotificationsEvent, NotificationsState> {
   
   FirebaseMessaging messaging = FirebaseMessaging.instance;
+  int pushNumberId = 0;
 
-  NotificationsBloc() : super( const NotificationsState() ) {
+  final Future<void> Function()? requestLocalNotificationPermissions;  
+  final void Function({ required int id, String? title, String? body, String? data })? showLocalNotification;  
+
+  NotificationsBloc({ 
+    this.requestLocalNotificationPermissions,
+    this.showLocalNotification
+  }) : super( const NotificationsState() ) {
 
     on<NotificationsStatusChanged>( _onNotificationsStatusChanged );    
     on<NotificationReceived>( _onPushMessageReceived );
@@ -72,6 +80,16 @@ class NotificationsBloc extends Bloc<NotificationsEvent, NotificationsState> {
         ? message.notification!.android?.imageUrl
         : message.notification!.apple?.imageUrl
     );
+
+    if ( showLocalNotification != null ) {
+      showLocalNotification!(
+        id: ++pushNumberId,
+        body: notification.body,
+        data: notification.messageId,
+        title: notification.title
+      );
+    }
+
     add( NotificationReceived( notification ) );    
   }
 
@@ -79,7 +97,7 @@ class NotificationsBloc extends Bloc<NotificationsEvent, NotificationsState> {
     FirebaseMessaging.onMessage.listen( handleRemoteMessage );
   }
 
-  void requestPermission() async {    
+  void requestPermission() async {
     NotificationSettings settings = await messaging.requestPermission(
       alert: true,          //* Solicita permisos para alertas visuales (banners o mensajes emergentes)
       announcement: false,  //* Relacionado con la capacidad de hacer anuncios, como notificaciones de voz especialmente en dispositivos de asistencia. No se solicita permiso
@@ -89,6 +107,11 @@ class NotificationsBloc extends Bloc<NotificationsEvent, NotificationsState> {
       provisional: false,   //* Permite enviar notificaciones silenciosas que aparecen en el centro de notificaciones sin interrumpir al usuario. No se solicita permiso
       sound: true,          //* Solicita permiso para reproducir sonidos en las notificaciones
     );
+
+    // Solicitar permiso a las local notifications
+    if ( requestLocalNotificationPermissions != null ) {
+      await requestLocalNotificationPermissions!();
+    }
 
     add( NotificationsStatusChanged( settings.authorizationStatus ) );
 
